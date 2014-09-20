@@ -1,13 +1,24 @@
-#define ADAFRUITBLE_REQ 10
-#define ADAFRUITBLE_RDY 2
-#define ADAFRUITBLE_RST 9
+/*
+ * IRrecord: record and play back IR signals as a minimal 
+ * An IR detector/demodulator must be connected to the input RECV_PIN.
+ * An IR LED must be connected to the output PWM pin 3.
+ * A button must be connected to the input BUTTON_PIN; this is the
+ * send button.
+ * A visible LED can be connected to STATUS_PIN to provide status.
+ *
+ * The logic is:
+ * If the button is pressed, send the IR code.
+ * If an IR code is received, record it.
+ *
+ * Version 0.11 September, 2009
+ * Copyright 2009 Ken Shirriff
+ * http://arcfn.com
+ */
 
 #include <IRremote.h>
-#include <SPI.h>
-#include "Adafruit_BLE_UART.h"
 
-int RECV_PIN = 3;
-int BUTTON_PIN = 7;
+int RECV_PIN = 11;
+int BUTTON_PIN = 12;
 int STATUS_PIN = 13;
 
 IRrecv irrecv(RECV_PIN);
@@ -15,75 +26,14 @@ IRsend irsend;
 
 decode_results results;
 
-Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
-
-//----------------------------------------------------------------------------
-//-------------------------------------aciCallBack-----------------------------
-//----------------------------------------------------------------------------
-void aciCallback(aci_evt_opcode_t event)
-{
-  switch(event)
-  {
-    case ACI_EVT_DEVICE_STARTED:
-      Serial.println(F("Advertising started"));
-      break;
-    case ACI_EVT_CONNECTED:
-      Serial.println(F("Connected!"));
-      break;
-    case ACI_EVT_DISCONNECTED:
-      Serial.println(F("Disconnected or advertising timed out"));
-      break;
-    default:
-      break;
-  }
-}
-
-
-//----------------------------------------------------------------------------
-//-------------------------------------rxCallBack-----------------------------
-//----------------------------------------------------------------------------
-void rxCallback(uint8_t *buffer, uint8_t len)
-{
-  Serial.print(F("Received "));
-  Serial.print(len);
-  Serial.print(F(" bytes: "));
-  for(int i=0; i<len; i++)
-   Serial.print((char)buffer[i]); 
-
-  Serial.print(F(" ["));
-
-  for(int i=0; i<len; i++)
-  {
-    Serial.print(" 0x"); Serial.print((char)buffer[i], HEX); 
-  }
-  Serial.println(F(" ]"));
-
-  /* Echo the same data back! */
-  uart.write(buffer, len);
-}
-
-//----------------------------------------------------------------------------
-//-------------------------------------setup-----------------------------
-//----------------------------------------------------------------------------
 void setup()
 {
   Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
   pinMode(BUTTON_PIN, INPUT);
   pinMode(STATUS_PIN, OUTPUT);
-  
-  while(!Serial); // Leonardo/Micro should wait for serial init
-  Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Callback Echo demo"));
-
-  uart.setRXcallback(rxCallback);
-  uart.setACIcallback(aciCallback);
-  uart.begin();
 }
 
-
-//----------------------------------------------------------------------------
-//-------------------------------------Store code-----------------------------
-//----------------------------------------------------------------------------
 // Storage for the recorded code
 int codeType = -1; // The type of code
 unsigned long codeValue; // The code value if not raw
@@ -144,14 +94,9 @@ void storeCode(decode_results *results) {
     Serial.println(results->value, HEX);
     codeValue = results->value;
     codeLen = results->bits;
-    
-    Serial.println("Code received!");
   }
 }
 
-//----------------------------------------------------------------------------
-//-------------------------------------sendCode-------------------------------
-//----------------------------------------------------------------------------
 void sendCode(int repeat) {
   if (codeType == NEC) {
     if (repeat) {
@@ -195,14 +140,9 @@ void sendCode(int repeat) {
   }
 }
 
-//----------------------------------------------------------------------------
-//-------------------------------------loop-----------------------------
-//----------------------------------------------------------------------------
 int lastButtonState;
 
 void loop() {
-  uart.pollACI();
-  
   // If button pressed, send the code.
   int buttonState = digitalRead(BUTTON_PIN);
   if (lastButtonState == HIGH && buttonState == LOW) {
