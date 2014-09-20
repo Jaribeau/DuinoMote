@@ -24,7 +24,7 @@
 #define ADAFRUITBLE_REQ 10
 #define ADAFRUITBLE_RDY 2     // This should be an interrupt pin, on Uno thats #2 or #3
 #define ADAFRUITBLE_RST 9
-Adafruit_BLE_UART BTLEserial = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
+Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
 /**************************************************************************/
 /*!
     Configure the Arduino and start advertising with the radio
@@ -40,6 +40,58 @@ IRsend irsend;
 
 decode_results results;
 
+
+
+
+/**************************************************************************/
+/*!
+    This function is called whenever data arrives on the RX channel
+*/
+/**************************************************************************/
+void rxCallback(uint8_t *buffer, uint8_t len)
+{
+  Serial.print(F("Received "));
+  Serial.print(len);
+  Serial.print(F(" bytes: "));
+  for(int i=0; i<len; i++)
+   Serial.print((char)buffer[i]); 
+
+  Serial.print(F(" ["));
+
+  for(int i=0; i<len; i++)
+  {
+    Serial.print(" 0x"); Serial.print((char)buffer[i], HEX); 
+  }
+  Serial.println(F(" ]"));
+
+  /* Echo the same data back! */
+  uart.write(buffer, len);
+}
+
+
+/**************************************************************************/
+/*!
+    This function is called whenever select ACI events happen
+*/
+/**************************************************************************/
+void aciCallback(aci_evt_opcode_t event)
+{
+  switch(event)
+  {
+    case ACI_EVT_DEVICE_STARTED:
+      Serial.println(F("Advertising started"));
+      break;
+    case ACI_EVT_CONNECTED:
+      Serial.println(F("Connected!"));
+      break;
+    case ACI_EVT_DISCONNECTED:
+      Serial.println(F("Disconnected or advertising timed out"));
+      break;
+    default:
+      break;
+  }
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -48,9 +100,11 @@ void setup()
   pinMode(STATUS_PIN, OUTPUT);
   
   while(!Serial); // Leonardo/Micro should wait for serial init
-  Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Print echo demo"));
+  Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Callback Echo demo"));
 
-  BTLEserial.begin();
+  uart.setRXcallback(rxCallback);
+  uart.setACIcallback(aciCallback);
+  uart.begin();
 }
 
 
@@ -62,10 +116,6 @@ void setup()
 aci_evt_opcode_t laststatus = ACI_EVT_DISCONNECTED;
 
 
-
-
-
-
 // Storage for the recorded code
 int codeType = -1; // The type of code
 unsigned long codeValue; // The code value if not raw
@@ -73,7 +123,8 @@ unsigned int rawCodes[RAWBUF]; // The durations if raw
 int codeLen; // The length of the code
 int toggle = 0; // The RC5/6 toggle state
 
-//---------------------IR Recorder-------------------
+
+//---------------------IR Recorder----------------------------------------------
 // Stores the code for later playback
 // Most of this code is just logging
 void storeCode(decode_results *results) {
@@ -127,11 +178,12 @@ void storeCode(decode_results *results) {
     Serial.println(results->value, HEX);
     codeValue = results->value;
     codeLen = results->bits;
+    Serial.println("codeLen:" + (int)codeLen);
   }
 }
 
 
-//---------------IR Blasert----------------
+//---------------IR Blaser----------------------------------------------------
 void sendCode(int repeat) {
   if (codeType == NEC) {
     if (repeat) {
@@ -178,10 +230,10 @@ void sendCode(int repeat) {
 int lastButtonState;
 
 
-//------------LOOP-----------------
+//------------LOOP----------------------------------------------
 void loop() {
   
-  //-----------RECORDER--------------
+  //-----------RECORDER-----------------------------------------
   // If button pressed, send the code.
   int buttonState = digitalRead(BUTTON_PIN);
   if (lastButtonState == HIGH && buttonState == LOW) {
@@ -206,58 +258,13 @@ void loop() {
   
   
   
-  //-----------BTLE--------------
+  //-----------BTLE---------------------------------------------
   
   // Tell the nRF8001 to do whatever it should be working on.
-  BTLEserial.pollACI();
-
-  // Ask what is our current status
-  aci_evt_opcode_t status = BTLEserial.getState();
-  // If the status changed....
-  if (status != laststatus) {
-    // print it out!
-    if (status == ACI_EVT_DEVICE_STARTED) {
-        Serial.println(F("* Advertising started"));
-    }
-    if (status == ACI_EVT_CONNECTED) {
-        Serial.println(F("* Connected!"));
-    }
-    if (status == ACI_EVT_DISCONNECTED) {
-        Serial.println(F("* Disconnected or advertising timed out"));
-    }
-    // OK set the last status change to this one
-    laststatus = status;
-  }
-
-  if (status == ACI_EVT_CONNECTED) {
-    // Lets see if there's any data for us!
-    if (BTLEserial.available()) {
-      Serial.print("* "); 
-      Serial.print(BTLEserial.available()); 
-      Serial.println(F(" bytes available from BTLE"));
-    }
-    // OK while we still have something to read, get a character and print it out
-    while (BTLEserial.available()) {
-      char c = BTLEserial.read();
-      Serial.print(c);
+  uart.pollACI();
+      
+      //String to send the recorded code to the android over bt
+      String btSend = String(codeType) + "," + String(codeValue) + "," + String(codeLen) + "," + String(toggle);
+      //BTLESerial.write(btSend, sendbuffersize);
     }
 
-    // Next up, see if we have any data to get from the Serial console
-
-    if (Serial.available()) {
-      // Read a line from Serial
-      Serial.setTimeout(100); // 100 millisecond timeout
-      String s = Serial.readString();
-
-      // We need to convert the line to bytes, no more than 20 at this time
-      uint8_t sendbuffer[20];
-      s.getBytes(sendbuffer, 20);
-      char sendbuffersize = min(20, s.length());
-
-      Serial.print(F("\n* Sending -> \"")); Serial.print((char *)sendbuffer); Serial.println("\"");
-
-      // write the data
-      BTLEserial.write(sendbuffer, sendbuffersize);
-    }
-  }
-}
