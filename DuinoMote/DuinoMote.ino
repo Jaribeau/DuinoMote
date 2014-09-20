@@ -24,12 +24,8 @@
 #define ADAFRUITBLE_REQ 10
 #define ADAFRUITBLE_RDY 2     // This should be an interrupt pin, on Uno thats #2 or #3
 #define ADAFRUITBLE_RST 9
+
 Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
-/**************************************************************************/
-/*!
-    Configure the Arduino and start advertising with the radio
-*/
-/**************************************************************************/
 
 int RECV_PIN = 5;
 int BUTTON_PIN = 7;
@@ -39,8 +35,14 @@ IRrecv irrecv(RECV_PIN);
 IRsend irsend;
 
 decode_results results;
+aci_evt_opcode_t laststatus = ACI_EVT_DISCONNECTED;
 
-
+// Storage for the recorded code
+int codeType = -1; // The type of code
+unsigned long codeValue; // The code value if not raw
+unsigned int rawCodes[RAWBUF]; // The durations if raw
+int codeLen; // The length of the code
+int toggle = 0; // The RC5/6 toggle state
 
 
 /**************************************************************************/
@@ -60,12 +62,11 @@ void rxCallback(uint8_t *buffer, uint8_t len)
 
   for(int i=0; i<len; i++)
   {
-    Serial.print(" 0x"); Serial.print((char)buffer[i], HEX); 
+    Serial.print(" 0x"); 
+    Serial.print((char)buffer[i], HEX); 
   }
   Serial.println(F(" ]"));
 
-  /* Echo the same data back! */
-  uart.write(buffer, len);
 }
 
 
@@ -92,6 +93,8 @@ void aciCallback(aci_evt_opcode_t event)
   }
 }
 
+
+//----------------------SETUP--------------------------
 void setup()
 {
   Serial.begin(9600);
@@ -105,24 +108,8 @@ void setup()
   uart.setRXcallback(rxCallback);
   uart.setACIcallback(aciCallback);
   uart.begin();
+  
 }
-
-
-/**************************************************************************/
-/*!
-    Constantly checks for new events on the nRF8001
-*/
-/**************************************************************************/
-aci_evt_opcode_t laststatus = ACI_EVT_DISCONNECTED;
-
-
-// Storage for the recorded code
-int codeType = -1; // The type of code
-unsigned long codeValue; // The code value if not raw
-unsigned int rawCodes[RAWBUF]; // The durations if raw
-int codeLen; // The length of the code
-int toggle = 0; // The RC5/6 toggle state
-
 
 //---------------------IR Recorder----------------------------------------------
 // Stores the code for later playback
@@ -264,7 +251,17 @@ void loop() {
   uart.pollACI();
       
       //String to send the recorded code to the android over bt
-      String btSend = String(codeType) + "," + String(codeValue) + "," + String(codeLen) + "," + String(toggle);
-      //BTLESerial.write(btSend, sendbuffersize);
+  String btSend = String(codeType) + "," 
+             + String(codeValue) + "," 
+             + String(codeLen) + "," 
+             + String(toggle);
+             
+  Serial.print(btSend);
+  
+  char btBuffer[20];
+  btSend.toCharArray(btBuffer,20);
+  
+  //Send the buffer
+  uart.write((uint8_t*)btBuffer, 20);
     }
 
