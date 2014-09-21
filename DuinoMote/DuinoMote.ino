@@ -43,6 +43,42 @@ unsigned long codeValue; // The code value if not raw
 unsigned int rawCodes[RAWBUF]; // The durations if raw
 int codeLen; // The length of the code
 int toggle = 0; // The RC5/6 toggle state
+int commandNumber = -1;
+String commandString = "";
+
+//Code arrays (included hardcoded devices)
+int codeTypeArr[] = {1,1,1,11,11,11,11,1,1};
+unsigned long codeValueArr[] = {0x61A0F00F,0x61A030CF,0x61A0B04F,0x8181C03F,0x8181807F,
+                                0x81818877,0x81819867,0x61A0F00F,0x61A030CF,0x61A0B04F};
+int codeLenArr[] = {32,32,32,32,32,32,32,32,32};
+int toggleArr[] = {0,0,0,0,0,0,0,0,0,0};
+
+
+//-----------------------------------------------------------------------
+//----------------------------------BLAST SIGNAL-------------------------
+//-----------------------------------------------------------------------
+void addSignal(int command, int type, unsigned long value, int length, boolean tog){
+  Serial.print("Adding signal...");
+  codeTypeArr[command] = type;
+  codeValueArr[command] = value;
+  codeLenArr[command] = length;
+  toggleArr[command] = tog;
+  Serial.print("Added signal.");
+}
+
+
+//-----------------------------------------------------------------------
+//----------------------------------BLAST SIGNAL-------------------------
+//-----------------------------------------------------------------------
+void blastSignal(int command){
+  Serial.print("Blast: ");
+  Serial.println(command);
+  codeType = codeTypeArr[command];
+  codeValue = codeValueArr[command];
+  //codeLen = codeLenArr[command];
+  //toggle = toggleArr[command];
+  sendCode(0);
+}
 
 
 /**************************************************************************/
@@ -55,8 +91,16 @@ void rxCallback(uint8_t *buffer, uint8_t len)
   Serial.print(F("Received "));
   Serial.print(len);
   Serial.print(F(" bytes: "));
+  
   for(int i=0; i<len; i++)
-   Serial.print((char)buffer[i]); 
+  {
+   Serial.print((char)buffer[i]);
+  }
+  
+  //Celebreate that it worked, then tell the remote to blast
+  Serial.println("Command:");
+  Serial.println(atoi((char*)buffer));
+  blastSignal(atoi((char*)buffer));
 
   Serial.print(F(" ["));
 
@@ -66,7 +110,7 @@ void rxCallback(uint8_t *buffer, uint8_t len)
     Serial.print((char)buffer[i], HEX); 
   }
   Serial.println(F(" ]"));
-
+ 
 }
 
 
@@ -103,7 +147,7 @@ void setup()
   pinMode(STATUS_PIN, OUTPUT);
   
   while(!Serial); // Leonardo/Micro should wait for serial init
-  Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Callback Echo demo"));
+  Serial.println(F("Initializing serial..."));
 
   uart.setRXcallback(rxCallback);
   uart.setACIcallback(aciCallback);
@@ -244,24 +288,9 @@ void loop() {
   lastButtonState = buttonState;
   
   
-  
   //-----------BTLE---------------------------------------------
   
   // Tell the nRF8001 to do whatever it should be working on.
   uart.pollACI();
-      
-      //String to send the recorded code to the android over bt
-  String btSend = String(codeType) + "," 
-             + String(codeValue) + "," 
-             + String(codeLen) + "," 
-             + String(toggle);
-             
-  Serial.print(btSend);
-  
-  char btBuffer[20];
-  btSend.toCharArray(btBuffer,20);
-  
-  //Send the buffer
-  uart.write((uint8_t*)btBuffer, 20);
-    }
+  }
 
