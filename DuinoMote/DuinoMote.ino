@@ -106,6 +106,26 @@ void rxCallback(uint8_t *buffer, uint8_t len)
     Serial.print((char)buffer[i], HEX); 
   }
   Serial.println(F(" ]"));
+  
+  /*
+  if(atoi((char*)buffer) == -1)
+  {
+      Serial.println("TRUE");
+      codeType = 0;
+      Serial.println(codeType);
+    while(codeType!=1)
+    {
+    irrecv.decode(&results);
+    digitalWrite(STATUS_PIN, HIGH);
+    storeCode(&results);
+    irrecv.resume(); // resume receiver
+    digitalWrite(STATUS_PIN, LOW);
+    
+      codeValueArr[commandCount-1] = codeValue;
+      commandCount++;
+      Serial.print("Saved command!");
+    }
+  }*/
  
 }
 
