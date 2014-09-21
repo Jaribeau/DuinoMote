@@ -1,25 +1,120 @@
-#define ADAFRUITBLE_REQ 10
-#define ADAFRUITBLE_RDY 2
-#define ADAFRUITBLE_RST 9
+/*
+ * IRrecord: record and play back IR signals as a minimal 
+ * An IR detector/demodulator must be connected to the input RECV_PIN.
+ * An IR LED must be connected to the output PWM pin 3.
+ * A button must be connected to the input BUTTON_PIN; this is the
+ * send button.
+ * A visible LED can be connected to STATUS_PIN to provide status.
+ *
+ * The logic is:
+ * If the button is pressed, send the IR code.
+ * If an IR code is received, record it.
+ * 
+ * Version 0.11 September, 2009
+ * Copyright 2009 Ken Shirriff
+ * http://arcfn.com
+ */
 
 #include <IRremote.h>
 #include <SPI.h>
 #include "Adafruit_BLE_UART.h"
 
-int RECV_PIN = 3;
+// Connect CLK/MISO/MOSI to hardware SPI
+// e.g. On UNO & compatible: CLK = 13, MISO = 12, MOSI = 11
+#define ADAFRUITBLE_REQ 10
+#define ADAFRUITBLE_RDY 2     // This should be an interrupt pin, on Uno thats #2 or #3
+#define ADAFRUITBLE_RST 9
+
+Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
+
+int RECV_PIN = 5;
 int BUTTON_PIN = 7;
-int STATUS_PIN = 13;
+int STATUS_PIN = 4;
 
 IRrecv irrecv(RECV_PIN);
 IRsend irsend;
 
 decode_results results;
+aci_evt_opcode_t laststatus = ACI_EVT_DISCONNECTED;
 
-Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
+// Storage for the recorded code
+int codeType = -1; // The type of code
+unsigned long codeValue; // The code value if not raw
+unsigned int rawCodes[RAWBUF]; // The durations if raw
+int codeLen; // The length of the code
+int toggle = 0; // The RC5/6 toggle state
+int commandNumber = -1;
+int commandCount = 3;
+String commandString = "";
 
-//----------------------------------------------------------------------------
-//-------------------------------------aciCallBack-----------------------------
-//----------------------------------------------------------------------------
+//Code arrays (included hardcoded devices)
+//int codeTypeArr[] = {1,1,1,1,1,1,1,1,1};
+unsigned long codeValueArr[] = {0x61A0F00F,0x61A030CF,0x61A0B04F,0x77E15061,0x77E16061,
+                                0x77E13061,0x77E19061,0x77E1A061,0x61A030CF,0x61A0B04F};
+//int codeLenArr[] = {32,32,32,32,32,32,32,32,32};
+//int toggleArr[] = {0,0,0,0,0,0,0,0,0,0};
+
+int startTime = 0;
+boolean started = false;
+
+
+//-----------------------------------------------------------------------
+//----------------------------------BLAST SIGNAL-------------------------
+//-----------------------------------------------------------------------
+void blastSignal(int command){
+  Serial.print("Blast: ");
+  Serial.println(command);
+  
+  //codeType = codeTypeArr[command];
+  codeType = 1;
+  codeValue = codeValueArr[command];
+  //codeLen = codeLenArr[command];
+  codeLen = 32;
+  toggle = 0;
+  //toggle = toggleArr[command];
+  sendCode(0);
+}
+
+
+/**************************************************************************/
+/*!
+    This function is called whenever data arrives on the RX channel
+*/
+/**************************************************************************/
+void rxCallback(uint8_t *buffer, uint8_t len)
+{
+  Serial.print(F("Received "));
+  Serial.print(len);
+  Serial.print(F(" bytes: "));
+  
+  for(int i=0; i<len; i++)
+  {
+   Serial.print((char)buffer[i]);
+  }
+  
+  //Celebreate that it worked, then tell the remote to blast
+  Serial.print("Command:");
+  Serial.println(atoi((char*)buffer));
+  
+  blastSignal(atoi((char*)buffer));
+
+  Serial.print(F(" ["));
+
+  for(int i=0; i<len; i++)
+  {
+    Serial.print(" 0x"); 
+    Serial.print((char)buffer[i], HEX); 
+  }
+  Serial.println(F(" ]"));
+ 
+}
+
+
+/**************************************************************************/
+/*!
+    This function is called whenever select ACI events happen
+*/
+/**************************************************************************/
 void aciCallback(aci_evt_opcode_t event)
 {
   switch(event)
@@ -39,32 +134,7 @@ void aciCallback(aci_evt_opcode_t event)
 }
 
 
-//----------------------------------------------------------------------------
-//-------------------------------------rxCallBack-----------------------------
-//----------------------------------------------------------------------------
-void rxCallback(uint8_t *buffer, uint8_t len)
-{
-  Serial.print(F("Received "));
-  Serial.print(len);
-  Serial.print(F(" bytes: "));
-  for(int i=0; i<len; i++)
-   Serial.print((char)buffer[i]); 
-
-  Serial.print(F(" ["));
-
-  for(int i=0; i<len; i++)
-  {
-    Serial.print(" 0x"); Serial.print((char)buffer[i], HEX); 
-  }
-  Serial.println(F(" ]"));
-
-  /* Echo the same data back! */
-  uart.write(buffer, len);
-}
-
-//----------------------------------------------------------------------------
-//-------------------------------------setup-----------------------------
-//----------------------------------------------------------------------------
+//----------------------SETUP--------------------------
 void setup()
 {
   Serial.begin(9600);
@@ -73,24 +143,15 @@ void setup()
   pinMode(STATUS_PIN, OUTPUT);
   
   while(!Serial); // Leonardo/Micro should wait for serial init
-  Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Callback Echo demo"));
+  Serial.println(F("Initializing serial..."));
 
   uart.setRXcallback(rxCallback);
   uart.setACIcallback(aciCallback);
   uart.begin();
+    Serial.println(F("Initializing serial..."));
 }
 
-
-//----------------------------------------------------------------------------
-//-------------------------------------Store code-----------------------------
-//----------------------------------------------------------------------------
-// Storage for the recorded code
-int codeType = -1; // The type of code
-unsigned long codeValue; // The code value if not raw
-unsigned int rawCodes[RAWBUF]; // The durations if raw
-int codeLen; // The length of the code
-int toggle = 0; // The RC5/6 toggle state
-
+//---------------------IR Recorder----------------------------------------------
 // Stores the code for later playback
 // Most of this code is just logging
 void storeCode(decode_results *results) {
@@ -144,14 +205,12 @@ void storeCode(decode_results *results) {
     Serial.println(results->value, HEX);
     codeValue = results->value;
     codeLen = results->bits;
-    
-    Serial.println("Code received!");
+    Serial.println("codeLen:" + (int)codeLen);
   }
 }
 
-//----------------------------------------------------------------------------
-//-------------------------------------sendCode-------------------------------
-//----------------------------------------------------------------------------
+
+//---------------IR Blaser----------------------------------------------------
 void sendCode(int repeat) {
   if (codeType == NEC) {
     if (repeat) {
@@ -195,14 +254,13 @@ void sendCode(int repeat) {
   }
 }
 
-//----------------------------------------------------------------------------
-//-------------------------------------loop-----------------------------
-//----------------------------------------------------------------------------
 int lastButtonState;
 
+
+//------------LOOP----------------------------------------------
 void loop() {
-  uart.pollACI();
   
+  //-----------RECORDER-----------------------------------------
   // If button pressed, send the code.
   int buttonState = digitalRead(BUTTON_PIN);
   if (lastButtonState == HIGH && buttonState == LOW) {
@@ -224,4 +282,11 @@ void loop() {
     digitalWrite(STATUS_PIN, LOW);
   }
   lastButtonState = buttonState;
-}
+  
+  
+  //-----------BTLE---------------------------------------------
+  
+  // Tell the nRF8001 to do whatever it should be working on.
+  uart.pollACI();
+  }
+
