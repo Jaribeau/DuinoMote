@@ -9,7 +9,7 @@
  * The logic is:
  * If the button is pressed, send the IR code.
  * If an IR code is received, record it.
- *
+ * 
  * Version 0.11 September, 2009
  * Copyright 2009 Ken Shirriff
  * http://arcfn.com
@@ -44,27 +44,18 @@ unsigned int rawCodes[RAWBUF]; // The durations if raw
 int codeLen; // The length of the code
 int toggle = 0; // The RC5/6 toggle state
 int commandNumber = -1;
+int commandCount = 3;
 String commandString = "";
 
 //Code arrays (included hardcoded devices)
-int codeTypeArr[] = {1,1,1,11,11,11,11,1,1};
-unsigned long codeValueArr[] = {0x61A0F00F,0x61A030CF,0x61A0B04F,0x8181C03F,0x8181807F,
-                                0x81818877,0x81819867,0x61A0F00F,0x61A030CF,0x61A0B04F};
-int codeLenArr[] = {32,32,32,32,32,32,32,32,32};
-int toggleArr[] = {0,0,0,0,0,0,0,0,0,0};
+//int codeTypeArr[] = {1,1,1,1,1,1,1,1,1};
+unsigned long codeValueArr[] = {0x61A0F00F,0x61A030CF,0x61A0B04F,0x77E15061,0x77E16061,
+                                0x77E13061,0x77E19061,0x77E1A061,0x61A030CF,0x61A0B04F};
+//int codeLenArr[] = {32,32,32,32,32,32,32,32,32};
+//int toggleArr[] = {0,0,0,0,0,0,0,0,0,0};
 
-
-//-----------------------------------------------------------------------
-//----------------------------------BLAST SIGNAL-------------------------
-//-----------------------------------------------------------------------
-void addSignal(int command, int type, unsigned long value, int length, boolean tog){
-  Serial.print("Adding signal...");
-  codeTypeArr[command] = type;
-  codeValueArr[command] = value;
-  codeLenArr[command] = length;
-  toggleArr[command] = tog;
-  Serial.print("Added signal.");
-}
+int startTime = 0;
+boolean started = false;
 
 
 //-----------------------------------------------------------------------
@@ -73,9 +64,13 @@ void addSignal(int command, int type, unsigned long value, int length, boolean t
 void blastSignal(int command){
   Serial.print("Blast: ");
   Serial.println(command);
-  codeType = codeTypeArr[command];
+  
+  //codeType = codeTypeArr[command];
+  codeType = 1;
   codeValue = codeValueArr[command];
   //codeLen = codeLenArr[command];
+  codeLen = 32;
+  toggle = 0;
   //toggle = toggleArr[command];
   sendCode(0);
 }
@@ -98,8 +93,9 @@ void rxCallback(uint8_t *buffer, uint8_t len)
   }
   
   //Celebreate that it worked, then tell the remote to blast
-  Serial.println("Command:");
+  Serial.print("Command:");
   Serial.println(atoi((char*)buffer));
+  
   blastSignal(atoi((char*)buffer));
 
   Serial.print(F(" ["));
@@ -152,7 +148,7 @@ void setup()
   uart.setRXcallback(rxCallback);
   uart.setACIcallback(aciCallback);
   uart.begin();
-  
+    Serial.println(F("Initializing serial..."));
 }
 
 //---------------------IR Recorder----------------------------------------------
